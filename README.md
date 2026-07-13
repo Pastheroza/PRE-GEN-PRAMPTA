@@ -67,4 +67,4 @@ Provider credentials (provider id + pair tokens) are issued through [prampta.com
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Apache License 2.0 — see [LICENSE](LICENSE). Matches the license of the PRE-GEN specification (PGspec).
