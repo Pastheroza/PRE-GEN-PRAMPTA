@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "prampta"
+version = "0.1.0"
+description = "Python SDK for the PRAMPTA PRE-GEN verification API"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.9"
+authors = [{ name = "PRAMPTA" }]
+keywords = ["prampta", "pre-gen", "ai", "verification", "generative-rights"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Libraries",
+    "Programming Language :: Python :: 3",
+]
+dependencies = [
+    "cryptography>=41.0",
+]
+
+[project.optional-dependencies]
+async = ["httpx>=0.25"]
+
+[project.urls]
+Homepage = "https://github.com/Pastheroza/PPlicence"
+Documentation = "https://github.com/Pastheroza/PPlicence/tree/main/sdk/python"
