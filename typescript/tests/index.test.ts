@@ -343,6 +343,7 @@ describe("assertAllowed", () => {
       licenseeId: "lic-1",
       token: "test-token",
       verifyDecisionSignature: false,
+      enforce: true, // explicit so this passes on both SDK and pilot branches
     });
 
     const mockRefusal = {
