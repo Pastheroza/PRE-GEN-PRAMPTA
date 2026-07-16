@@ -12,6 +12,9 @@ import os
 import time
 from dataclasses import dataclass, field
 from typing import Optional, Any
+import warnings
+
+from prampta import _trust
 
 try:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -192,6 +195,7 @@ class Prampta:
         verify_signatures: bool = True,
         operator_public_key_hex: str | None = None,
         fail_closed: bool = True,
+        enforce: bool = True,
         max_retries: int = 2,
         retry_backoff: float = 0.2,
     ):
@@ -202,12 +206,22 @@ class Prampta:
         self.timeout = timeout
         self.verify_signatures = verify_signatures
         self.fail_closed = fail_closed
+        # Monitor mode: when False, refusals do NOT block generation — the SDK
+        # still verifies and records a signed decision, but assert_allowed /
+        # generate_guarded proceed instead of raising. Use for a pilot rollout.
+        self.enforce = enforce
         # Retries for transient failures only (network/timeout, HTTP 429, 5xx).
         # Non-transient errors (4xx other than 429, refusals, signature/schema
         # errors) are never retried. Set max_retries=0 to disable.
         self.max_retries = max(0, max_retries)
         self.retry_backoff = retry_backoff
-        self._operator_public_key_hex = operator_public_key_hex or os.getenv("PRAMPTA_OPERATOR_PUBLIC_KEY", "")
+        # One or more pinned operator keys (comma/space separated) — the trust
+        # anchor. Pin current + announced-next to rotate without downtime.
+        self._pinned_keys = _trust.parse_pins(
+            operator_public_key_hex or os.getenv("PRAMPTA_OPERATOR_PUBLIC_KEY", "")
+        )
+        self._key_set_cache: dict | None = None
+        self._tofu_warned = False
 
         if not self.base_url:
             raise ValueError("base_url is required (or set PRAMPTA_BASE_URL)")
@@ -238,16 +252,40 @@ class Prampta:
             "Authorization": f"Bearer {self.token}",
         }
 
-    def _get_operator_key(self) -> str:
-        """Get operator public key — from config or fetched from /version."""
-        if self._operator_public_key_hex:
-            return self._operator_public_key_hex
-        version_data = self._get("/version")
-        key = version_data.get("operator_public_key", "")
-        if not key or len(key) != 64:
-            raise PramptaSignatureError("Operator public key from /version is invalid")
-        self._operator_public_key_hex = key
-        return key
+    def _fetch_verified_key_set(self) -> dict:
+        """Fetch /keys and check it is internally consistent (self-signed by
+        its current key). Cached for the client's lifetime."""
+        if self._key_set_cache is not None:
+            return self._key_set_cache
+        ks = self._get("/keys")
+        entries = {e.get("key_id"): e.get("public_key_hex", "") for e in ks.get("keys", [])}
+        current_hex = entries.get(ks.get("current_key_id"), "")
+        sig = ks.get("signature", "")
+        if not current_hex or not sig:
+            raise PramptaSignatureError("Operator key set from /keys is malformed")
+        body = {k: v for k, v in ks.items() if k != "signature"}
+        if not _verify_ed25519(current_hex, sig, _canonical_json(body)):
+            raise PramptaSignatureError("Operator key set signature is invalid")
+        self._key_set_cache = ks
+        return ks
+
+    def _resolve_operator_key(self, key_id: str) -> str:
+        """Public key hex to verify a decision signed by `key_id`, enforcing the
+        pinning trust model (see prampta/_trust.py)."""
+        choice = _trust.choose_pinned(key_id, self._pinned_keys)
+        if choice:
+            return choice.public_key_hex
+        # Pinned mode: never trust an unpinned key (and don't hit /keys for it).
+        if self._pinned_keys:
+            raise PramptaSignatureError(_trust.pinned_rotation_error(key_id))
+        # Unpinned / TOFU dev mode: resolve from the self-consistent key set.
+        choice = _trust.resolve_unpinned(key_id, self._fetch_verified_key_set())
+        if choice.error:
+            raise PramptaSignatureError(choice.error)
+        if choice.warning and not self._tofu_warned:
+            warnings.warn(choice.warning, stacklevel=3)
+            self._tofu_warned = True
+        return choice.public_key_hex
 
     def _verify_decision(self, raw_data: dict, result: VerifyResult, sent_prompt_hash: str) -> None:
         """Verify operator signature, TTL, and prompt hash binding."""
@@ -264,14 +302,9 @@ class Prampta:
         body = {k: v for k, v in raw_data.items() if k != "operator_signature"}
         canonical = _canonical_json(body)
 
-        pub_key = self._get_operator_key()
-
-        # Verify operator_key_id matches the actual public key fingerprint
-        expected_fp = f"pg-ed25519:{hashlib.sha256(bytes.fromhex(pub_key)).hexdigest()[:32]}"
-        if result.operator_key_id != expected_fp:
-            raise PramptaSignatureError(
-                f"operator_key_id does not match public key: expected {expected_fp}, got {result.operator_key_id}"
-            )
+        # Resolve the verifying key from the pinned trust anchor (or /keys),
+        # then check the signature was made by exactly that key.
+        pub_key = self._resolve_operator_key(result.operator_key_id)
         if not _verify_ed25519(pub_key, sig, canonical):
             raise PramptaSignatureError(
                 "Operator signature is invalid — decision cannot be trusted"
@@ -445,10 +478,18 @@ class Prampta:
             raise
 
     def assert_allowed(self, subject_id: str, **kwargs) -> VerifyResult:
-        """Assert generation is allowed. Raises on refusal."""
+        """Assert generation is allowed. Raises PramptaRefused (carrying the
+        signed decision) if not — so callers can distinguish a legitimate
+        "no" from a transport/API error, and never invoke the model on a
+        refusal. Consistent with generate_guarded()."""
         result = self.verify(subject_id, **kwargs)
         if not result.allowed:
-            raise PramptaError(403, f"Generation refused: {result.reason}")
+            if self.enforce:
+                raise PramptaRefused(result)
+            warnings.warn(
+                f"PRAMPTA monitor mode: would REFUSE ({result.reason}) but enforce=False — proceeding.",
+                stacklevel=2,
+            )
         return result
 
     def submit_receipt(
@@ -507,7 +548,12 @@ class Prampta:
             modality=modality, model=model, intended_use=intended_use,
         )
         if not decision.allowed:
-            raise PramptaRefused(decision)
+            if self.enforce:
+                raise PramptaRefused(decision)
+            warnings.warn(
+                f"PRAMPTA monitor mode: would REFUSE ({decision.reason}) but enforce=False — generating anyway.",
+                stacklevel=2,
+            )
 
         result = generate()
 

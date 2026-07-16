@@ -1,6 +1,6 @@
 {
-  "name": "prampta",
-  "version": "0.1.0",
+  "name": "@prampta/sdk",
+  "version": "0.4.0",
   "description": "PRAMPTA SDK \u2014 authorization before generation",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -13,7 +13,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts --clean",
@@ -40,5 +41,11 @@
   },
   "dependencies": {
     "@noble/ed25519": "^3.1.0"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Pastheroza/PRE-GEN-PRAMPTA.git",
+    "directory": "typescript"
+  },
+  "homepage": "https://github.com/Pastheroza/PRE-GEN-PRAMPTA"
 }

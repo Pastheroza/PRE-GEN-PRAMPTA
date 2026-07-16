@@ -5,7 +5,7 @@ Pre-generation authorization for AI content. Verifies operator Ed25519 signature
 ## Installation
 
 ```bash
-npm install prampta
+npm install @prampta/sdk
 ```
 
 Requires Node.js ≥ 18 (uses native `crypto.subtle` for SHA-256).
@@ -13,7 +13,7 @@ Requires Node.js ≥ 18 (uses native `crypto.subtle` for SHA-256).
 ## Quick Start
 
 ```typescript
-import { Prampta } from "prampta";
+import { Prampta } from "@prampta/sdk";
 
 const pg = new Prampta({
   baseUrl: "https://api2.prampta.com",
@@ -52,6 +52,30 @@ if (result.allowed) {
 - **TTL validation** — expired decisions are rejected
 - **Fail-closed** — any error defaults to deny
 
+
+## Key Pinning & Rotation (trust anchor)
+
+Signature verification is only meaningful against a key you obtained out of
+band. **Pin the operator key** — do not rely on the key the API hands you:
+
+```typescript
+const pg = new Prampta({
+  baseUrl: "https://api2.prampta.com",
+  providerId: "my-ai-service",
+  licenseeId: "acme-corp",
+  token: "pair-token",
+  operatorPublicKeyHex: "<pinned key from PRAMPTA docs>",
+});
+```
+
+- A decision is trusted only when signed by a pinned key. A decision signed by
+  an **unpinned** key fails closed with an actionable error (no silent trust).
+- **Rotation without downtime:** pin the current *and* the announced next key
+  (comma/space separated). When PRAMPTA rotates, the new key is already trusted.
+- **No pinned key** → trust-on-first-use: the SDK still verifies but logs a
+  warning. The signature proves consistency, not authenticity. Never ship
+  production this way.
+
 ## Configuration
 
 | Parameter | Env Var | Required | Description |
@@ -68,7 +92,7 @@ if (result.allowed) {
 ## Error Handling
 
 ```typescript
-import { Prampta, PramptaRefusalError, PramptaSignatureError } from "prampta";
+import { Prampta, PramptaRefusalError, PramptaSignatureError } from "@prampta/sdk";
 
 try {
   await pg.assertAllowed("subject-id", { prompt: "...", modality: "image" });
@@ -88,7 +112,7 @@ try {
 If you hash prompts yourself (e.g., for privacy), pass `promptHash` instead of `prompt`:
 
 ```typescript
-import { hashPrompt } from "prampta";
+import { hashPrompt } from "@prampta/sdk";
 
 const hash = await hashPrompt("Da Vinci in a documentary");
 const result = await pg.verify("leonardo-da-vinci", {

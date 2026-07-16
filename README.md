@@ -40,7 +40,7 @@ for h in hits:
 ### TypeScript
 
 ```ts
-import { Prampta } from "prampta";
+import { Prampta } from "@prampta/sdk";
 
 const pg = new Prampta({
   baseUrl: "https://api2.prampta.com",

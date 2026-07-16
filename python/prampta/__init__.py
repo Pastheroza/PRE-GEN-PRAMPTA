@@ -23,7 +23,7 @@ from prampta.client import (
 )
 from prampta.matcher import match_subjects, normalize_for_match, SubjectIndexCache
 
-__version__ = "0.1.0"
+__version__ = "0.4.0"
 __all__ = [
     "Prampta", "VerifyResult", "IntendedUse",
     "PramptaError", "PramptaSignatureError", "PramptaSchemaError", "PramptaRefused",

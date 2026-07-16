@@ -12,12 +12,16 @@ import time
 
 from prampta.client import (
     VerifyResult, IntendedUse, Prampta,
-    PramptaError, PramptaSignatureError, PramptaSchemaError,
+    PramptaError, PramptaSignatureError, PramptaSchemaError, PramptaRefused,
     hash_prompt, _canonical_json, _verify_ed25519,
 )
 
 import os
+import warnings
+
 import httpx
+
+from prampta import _trust
 
 
 class AsyncPrampta:
@@ -48,6 +52,7 @@ class AsyncPrampta:
         verify_signatures: bool = True,
         operator_public_key_hex: str | None = None,
         fail_closed: bool = True,
+        enforce: bool = True,
         max_retries: int = 2,
         retry_backoff: float = 0.2,
     ):
@@ -58,10 +63,15 @@ class AsyncPrampta:
         self.timeout = timeout
         self.verify_signatures = verify_signatures
         self.fail_closed = fail_closed
+        self.enforce = enforce  # monitor mode when False (see sync client)
         # Retries for transient failures only (network/timeout, HTTP 429, 5xx).
         self.max_retries = max(0, max_retries)
         self.retry_backoff = retry_backoff
-        self._operator_public_key_hex = operator_public_key_hex or os.getenv("PRAMPTA_OPERATOR_PUBLIC_KEY", "")
+        self._pinned_keys = _trust.parse_pins(
+            operator_public_key_hex or os.getenv("PRAMPTA_OPERATOR_PUBLIC_KEY", "")
+        )
+        self._key_set_cache: dict | None = None
+        self._tofu_warned = False
 
         if not self.base_url:
             raise ValueError("base_url is required (or set PRAMPTA_BASE_URL)")
@@ -86,19 +96,42 @@ class AsyncPrampta:
             "Authorization": f"Bearer {self.token}",
         }
 
-    async def _get_operator_key(self) -> str:
-        """Get operator public key — from config or fetched from /version."""
-        if self._operator_public_key_hex:
-            return self._operator_public_key_hex
-        version_data = await self._get("/version")
-        key = version_data.get("operator_public_key", "")
-        if not key or len(key) != 64:
-            raise PramptaSignatureError("Operator public key from /version is invalid")
-        self._operator_public_key_hex = key
-        return key
+    async def _fetch_verified_key_set(self) -> dict:
+        """Fetch /keys and check it is self-signed by its current key. Cached."""
+        if self._key_set_cache is not None:
+            return self._key_set_cache
+        ks = await self._get("/keys")
+        entries = {e.get("key_id"): e.get("public_key_hex", "") for e in ks.get("keys", [])}
+        current_hex = entries.get(ks.get("current_key_id"), "")
+        sig = ks.get("signature", "")
+        if not current_hex or not sig:
+            raise PramptaSignatureError("Operator key set from /keys is malformed")
+        body = {k: v for k, v in ks.items() if k != "signature"}
+        if not _verify_ed25519(current_hex, sig, _canonical_json(body)):
+            raise PramptaSignatureError("Operator key set signature is invalid")
+        self._key_set_cache = ks
+        return ks
 
-    def _verify_decision(self, raw_data: dict, result: VerifyResult, sent_prompt_hash: str) -> None:
-        """Verify operator signature, TTL, and prompt hash binding."""
+    async def _resolve_operator_key(self, key_id: str) -> str:
+        """Public key hex to verify a decision signed by `key_id` (see _trust)."""
+        choice = _trust.choose_pinned(key_id, self._pinned_keys)
+        if choice:
+            return choice.public_key_hex
+        # Pinned mode: never trust an unpinned key (and don't hit /keys for it).
+        if self._pinned_keys:
+            raise PramptaSignatureError(_trust.pinned_rotation_error(key_id))
+        # Unpinned / TOFU dev mode: resolve from the self-consistent key set.
+        choice = _trust.resolve_unpinned(key_id, await self._fetch_verified_key_set())
+        if choice.error:
+            raise PramptaSignatureError(choice.error)
+        if choice.warning and not self._tofu_warned:
+            warnings.warn(choice.warning, stacklevel=3)
+            self._tofu_warned = True
+        return choice.public_key_hex
+
+    def _verify_decision(self, raw_data: dict, result: VerifyResult, sent_prompt_hash: str, pub_key: str) -> None:
+        """Verify operator signature, TTL, and prompt hash binding. `pub_key`
+        is the trust-resolved key for this decision (see _resolve_operator_key)."""
         if not self.verify_signatures:
             return
 
@@ -111,18 +144,6 @@ class AsyncPrampta:
         # Rebuild canonical body (exclude signature field)
         body = {k: v for k, v in raw_data.items() if k != "operator_signature"}
         canonical = _canonical_json(body)
-
-        # Key must be fetched before calling this — see verify()
-        pub_key = self._operator_public_key_hex
-        if not pub_key:
-            raise PramptaSignatureError("Operator public key not available")
-
-        # Verify operator_key_id matches the actual public key fingerprint
-        expected_fp = f"pg-ed25519:{hashlib.sha256(bytes.fromhex(pub_key)).hexdigest()[:32]}"
-        if result.operator_key_id != expected_fp:
-            raise PramptaSignatureError(
-                f"operator_key_id does not match public key: expected {expected_fp}, got {result.operator_key_id}"
-            )
 
         if not _verify_ed25519(pub_key, sig, canonical):
             raise PramptaSignatureError(
@@ -184,10 +205,6 @@ class AsyncPrampta:
         }
 
         try:
-            # Ensure operator key is fetched before verification
-            if self.verify_signatures:
-                await self._get_operator_key()
-
             data = await self._post("/v1/verify/", payload)
 
             result = VerifyResult(
@@ -207,13 +224,19 @@ class AsyncPrampta:
                 subject_authority=data.get("subject_authority", ""),
             )
 
-            # Verify operator signature, TTL, and payload binding
-            self._verify_decision(data, result, computed_hash)
+            # Verify operator signature, TTL, and payload binding. Resolve the
+            # verifying key from the decision's own key_id (rotation-aware).
+            pub_key = ""
+            if self.verify_signatures:
+                pub_key = await self._resolve_operator_key(result.operator_key_id)
+            self._verify_decision(data, result, computed_hash, pub_key)
 
-            # Verify context binding — anti-replay
+            # Verify context binding — anti-replay. Pass the FULL intended use
+            # (product/project/channel/territory/categories); omitting it let an
+            # ALLOW for Product A be replayed to authorize Product B.
             Prampta._verify_context_binding(
                 data, subject_id, self.provider_id, self.licensee_id,
-                modality or intended_use.modality, model,
+                modality or intended_use.modality, model, intended_use,
             )
 
             return result
@@ -226,10 +249,16 @@ class AsyncPrampta:
             raise
 
     async def assert_allowed(self, subject_id: str, **kwargs) -> VerifyResult:
-        """Assert generation is allowed. Raises on refusal."""
+        """Assert generation is allowed. Raises PramptaRefused (carrying the
+        signed decision) if not — consistent with the sync client."""
         result = await self.verify(subject_id, **kwargs)
         if not result.allowed:
-            raise PramptaError(403, f"Generation refused: {result.reason}")
+            if self.enforce:
+                raise PramptaRefused(result)
+            warnings.warn(
+                f"PRAMPTA monitor mode: would REFUSE ({result.reason}) but enforce=False — proceeding.",
+                stacklevel=2,
+            )
         return result
 
     async def submit_receipt(

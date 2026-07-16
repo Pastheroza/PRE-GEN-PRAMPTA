@@ -55,6 +55,30 @@ async with AsyncPrampta(
 - **TTL validation** — expired decisions are rejected
 - **Fail-closed** — any error defaults to deny
 
+
+## Key Pinning & Rotation (trust anchor)
+
+Signature verification is only meaningful against a key you obtained out of
+band. **Pin the operator key** — do not rely on the key the API hands you:
+
+```python
+pg = Prampta(
+    base_url="https://api2.prampta.com",
+    provider_id="my-ai-service",
+    licensee_id="acme-corp",
+    token="pair-token",
+    operator_public_key_hex="<pinned key from PRAMPTA docs>",
+)
+```
+
+- A decision is trusted only when signed by a pinned key; an **unpinned** key
+  fails closed with an actionable error (no silent trust).
+- **Rotation without downtime:** pin the current *and* the announced next key
+  (comma/space separated). When PRAMPTA rotates, the new key is already trusted.
+- **No pinned key** → trust-on-first-use: the SDK still verifies but emits a
+  warning. The signature proves consistency, not authenticity. Never ship
+  production this way.
+
 ## Configuration
 
 | Parameter | Env Var | Required | Description |

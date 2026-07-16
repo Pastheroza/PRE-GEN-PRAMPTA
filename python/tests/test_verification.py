@@ -217,7 +217,9 @@ class TestTTLValidation:
 
         pg = Prampta.__new__(Prampta)
         pg.verify_signatures = True
-        pg._operator_public_key_hex = public_hex
+        pg._pinned_keys = [public_hex]  # pin the signer so resolution reaches TTL
+        pg._key_set_cache = None
+        pg._tofu_warned = False
 
         result = VerifyResult(
             allowed=True,
@@ -253,82 +255,46 @@ class TestFingerprintVerification:
         sig_hex = private_key.sign(canonical).hex()
         return private_key, public_hex, fingerprint, raw_data, sig_hex
 
-    def test_sync_fingerprint_mismatch_raises(self):
-        """Sync SDK rejects decisions with wrong operator_key_id."""
-        _, public_hex, _, raw_data, sig_hex = self._make_signed_decision()
-
-        # Tamper with operator_key_id
-        raw_data["operator_key_id"] = "pg-ed25519:0000000000000000000000000000dead"
-        # Re-sign with tampered data so signature passes
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-        private2 = Ed25519PrivateKey.generate()
-        pub2_hex = private2.public_key().public_bytes_raw().hex()
-        canonical = _canonical_json(raw_data)
-        sig_hex = private2.sign(canonical).hex()
+    def test_sync_foreign_key_rejected(self):
+        """A decision signed by a key NOT in the pinned set is rejected —
+        even if its own signature is internally valid (the anti-replay/MITM
+        property). The new trust model fails closed on unpinned keys."""
+        _, real_pub_hex, _, _, _ = self._make_signed_decision()
 
         pg = Prampta.__new__(Prampta)
         pg.verify_signatures = True
-        pg._operator_public_key_hex = pub2_hex
+        pg._pinned_keys = [real_pub_hex]  # pin one real key
+        pg._key_set_cache = None
+        pg._tofu_warned = False
 
-        result = VerifyResult(
-            allowed=True,
-            decision_id="fp-test",
-            operator_key_id=raw_data["operator_key_id"],
-            operator_signature=sig_hex,
-            expires_at=raw_data["expires_at"],
-            prompt_hash="abc123",
-        )
+        with pytest.raises(PramptaSignatureError, match="not in your pinned set"):
+            pg._resolve_operator_key("pg-ed25519:0000000000000000000000000000dead")
 
-        with pytest.raises(PramptaSignatureError, match="operator_key_id does not match"):
-            pg._verify_decision(raw_data, result, "abc123")
-
-    def test_async_fingerprint_mismatch_raises(self):
-        """Async SDK rejects decisions with wrong operator_key_id.
-
-        We test _verify_decision directly which doesn't need httpx at runtime.
-        """
+    def test_async_foreign_key_rejected(self):
+        """Async SDK rejects a decision signed by an unpinned key too."""
         pytest.importorskip("httpx")
+        import asyncio
         from prampta.async_client import AsyncPrampta
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-
-        private = Ed25519PrivateKey.generate()
-        pub_hex = private.public_key().public_bytes_raw().hex()
-
-        # Sign with correct key but claim wrong fingerprint
-        raw_data = {
-            "allowed": True,
-            "decision_id": "async-fp-test",
-            "operator_key_id": "pg-ed25519:0000000000000000000000000000dead",
-            "expires_at": int(time.time()) + 300,
-            "prompt_hash": "abc123",
-        }
-        canonical = _canonical_json(raw_data)
-        sig_hex = private.sign(canonical).hex()
+        _, real_pub_hex, _, _, _ = self._make_signed_decision()
 
         app = AsyncPrampta.__new__(AsyncPrampta)
         app.verify_signatures = True
-        app._operator_public_key_hex = pub_hex
+        app._pinned_keys = [real_pub_hex]
+        app._key_set_cache = None
+        app._tofu_warned = False
 
-        result = VerifyResult(
-            allowed=True,
-            decision_id="async-fp-test",
-            operator_key_id=raw_data["operator_key_id"],
-            operator_signature=sig_hex,
-            expires_at=raw_data["expires_at"],
-            prompt_hash="abc123",
-        )
+        with pytest.raises(PramptaSignatureError, match="not in your pinned set"):
+            asyncio.run(app._resolve_operator_key("pg-ed25519:0000000000000000000000000000dead"))
 
-        with pytest.raises(PramptaSignatureError, match="operator_key_id does not match"):
-            app._verify_decision(raw_data, result, "abc123")
-
-    def test_correct_fingerprint_passes(self):
-        """Valid fingerprint should not raise."""
-        import hashlib
-        _, public_hex, fingerprint, raw_data, sig_hex = self._make_signed_decision()
+    def test_pinned_key_passes(self):
+        """A decision signed by the pinned key verifies and passes."""
+        _, public_hex, _, raw_data, sig_hex = self._make_signed_decision()
 
         pg = Prampta.__new__(Prampta)
         pg.verify_signatures = True
-        pg._operator_public_key_hex = public_hex
+        pg._pinned_keys = [public_hex]
+        pg._key_set_cache = None
+        pg._tofu_warned = False
 
         result = VerifyResult(
             allowed=True,

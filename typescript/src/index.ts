@@ -51,11 +51,20 @@ export interface PramptaConfig {
   /** If true (default), deny on backend errors/timeouts. */
   failClosed?: boolean;
   /**
-   * Operator public key hex for signature verification.
-   * If not provided, fetched from /version on first use and cached.
-   * Falls back to PRAMPTA_OPERATOR_PUBLIC_KEY env var.
+   * Pinned operator public key(s), hex — the trust anchor for signature
+   * verification. Obtain out of band (PRAMPTA docs), not from the API that
+   * serves decisions. Pass one, or several (comma/space separated) to pin the
+   * current + next key and rotate with zero downtime. Falls back to
+   * PRAMPTA_OPERATOR_PUBLIC_KEY. If omitted, verification runs in
+   * trust-on-first-use mode (a warning is emitted) — do not do this in prod.
    */
   operatorPublicKeyHex?: string;
+  /**
+   * Monitor mode: when false, refusals do NOT block generation — the SDK still
+   * verifies and records a signed decision, but assertAllowed / withAuthorization
+   * proceed instead of throwing. Use for a pilot rollout. Default true.
+   */
+  enforce?: boolean;
   /**
    * If true (default), verify operator signature on every decision.
    * Set to false ONLY for local development — never in production.
@@ -258,6 +267,19 @@ async function sha256(input: string): Promise<string> {
   return sha256Bytes(data);
 }
 
+const TOFU_WARNING =
+  "PRAMPTA: verifying operator signatures WITHOUT a pinned key (trust-on-first-use). " +
+  "This provides no protection against a malicious or compromised endpoint. Set " +
+  "operatorPublicKeyHex (from PRAMPTA's docs) before production.";
+
+function parsePins(raw: string): string[] {
+  return raw ? raw.split(/[\s,]+/).filter(Boolean) : [];
+}
+
+async function keyFingerprint(publicKeyHex: string): Promise<string> {
+  return `pg-ed25519:${(await sha256Bytes(hexToBytes(publicKeyHex))).slice(0, 32)}`;
+}
+
 async function sha256Bytes(data: Uint8Array): Promise<string> {
   if (typeof globalThis.crypto?.subtle !== "undefined") {
     // Use exact byte range — data.buffer may be larger if Uint8Array has offset/length
@@ -384,8 +406,11 @@ export class Prampta {
   private readonly retryBackoffMs: number;
   private readonly failClosed: boolean;
   private readonly verifySignature: boolean;
-  private operatorPublicKeyHex: string | null;
-  private operatorKeyPromise: Promise<string> | null = null;
+  private readonly enforce: boolean;
+  private pinnedKeys: string[];
+  private keySetCache: Record<string, any> | null = null;
+  private keySetPromise: Promise<Record<string, any>> | null = null;
+  private tofuWarned = false;
 
   constructor(config: PramptaConfig = {}) {
     this.baseUrl = (config.baseUrl || envVar("PRAMPTA_BASE_URL")).replace(/\/+$/, "");
@@ -397,7 +422,8 @@ export class Prampta {
     this.retryBackoffMs = config.retryBackoffMs ?? 200;
     this.failClosed = config.failClosed ?? true;
     this.verifySignature = config.verifyDecisionSignature ?? true;
-    this.operatorPublicKeyHex = config.operatorPublicKeyHex || envVar("PRAMPTA_OPERATOR_PUBLIC_KEY") || null;
+    this.enforce = config.enforce ?? true;
+    this.pinnedKeys = parsePins(config.operatorPublicKeyHex || envVar("PRAMPTA_OPERATOR_PUBLIC_KEY") || "");
 
     if (!this.baseUrl) throw new PramptaError("baseUrl is required (or set PRAMPTA_BASE_URL)");
     if (!this.providerId) throw new PramptaError("providerId is required (or set PRAMPTA_PROVIDER_ID)");
@@ -407,27 +433,54 @@ export class Prampta {
 
   // ── Key Discovery ───────────────────────────────────────────────────
 
-  /**
-   * Get or fetch operator public key. Cached after first call.
-   * If operatorPublicKeyHex was provided in config, uses that (pinned key).
-   */
-  private async getOperatorPublicKey(): Promise<string> {
-    if (this.operatorPublicKeyHex) return this.operatorPublicKeyHex;
-
-    if (!this.operatorKeyPromise) {
-      this.operatorKeyPromise = this.fetchAndCacheKey();
+  /** Fetch /keys and check it is self-signed by its current key. Cached. */
+  private async fetchVerifiedKeySet(): Promise<Record<string, any>> {
+    if (this.keySetCache) return this.keySetCache;
+    if (!this.keySetPromise) {
+      this.keySetPromise = (async () => {
+        const ks = await this.get("/keys");
+        const entries: Record<string, string> = {};
+        for (const e of ks.keys || []) entries[e.key_id] = e.public_key_hex || "";
+        const currentHex = entries[ks.current_key_id] || "";
+        const sig = ks.signature || "";
+        if (!currentHex || !sig) throw new PramptaSignatureError("Operator key set from /keys is malformed");
+        const body = { ...ks }; delete body.signature;
+        const ok = await ed.verifyAsync(hexToBytes(sig), new TextEncoder().encode(canonicalJson(body)), hexToBytes(currentHex));
+        if (!ok) throw new PramptaSignatureError("Operator key set signature is invalid");
+        this.keySetCache = ks;
+        return ks;
+      })();
     }
-    return this.operatorKeyPromise;
+    return this.keySetPromise;
   }
 
-  private async fetchAndCacheKey(): Promise<string> {
-    const data = await this.get("/version");
-    const key = data.operator_public_key;
-    if (!key || typeof key !== "string" || key.length !== 64) {
-      throw new PramptaSignatureError("Operator public key from /version is invalid");
+  /**
+   * Public key hex to verify a decision signed by `keyId`, enforcing the
+   * pinning trust model. A pinned match returns immediately (no network); an
+   * unpinned key id fails closed in pinned mode; unpinned/TOFU mode resolves
+   * from the self-consistent /keys set with a warning.
+   */
+  private async resolveOperatorKey(keyId: string): Promise<string> {
+    for (const hex of this.pinnedKeys) {
+      if ((await keyFingerprint(hex)) === keyId) return hex;
     }
-    this.operatorPublicKeyHex = key;
-    return key;
+    if (this.pinnedKeys.length > 0) {
+      throw new PramptaSignatureError(
+        `Decision was signed by operator key '${keyId}', which is not in your pinned set. ` +
+        "If PRAMPTA rotated keys, confirm the new key out of band and add it to " +
+        "operatorPublicKeyHex (pin current + next to rotate without downtime). " +
+        "Refusing to trust an unpinned key."
+      );
+    }
+    const ks = await this.fetchVerifiedKeySet();
+    const entries: Record<string, string> = {};
+    for (const e of ks.keys || []) entries[e.key_id] = e.public_key_hex || "";
+    const match = entries[keyId];
+    if (!match) {
+      throw new PramptaSignatureError(`Decision key '${keyId}' is not present in the operator key set from /keys.`);
+    }
+    if (!this.tofuWarned) { console.warn(TOFU_WARNING); this.tofuWarned = true; }
+    return match;
   }
 
   // ── Subject Detection ────────────────────────────────────────────────
@@ -474,14 +527,9 @@ export class Prampta {
     const keyId = decision.operatorKeyId;
     if (!keyId) throw new PramptaSignatureError("Decision missing operator_key_id");
 
-    // Verify operator_key_id matches the actual public key fingerprint
-    const pubKeyHexForFp = this.operatorPublicKeyHex || await this.getOperatorPublicKey();
-    const expectedFp = `pg-ed25519:${(await sha256Bytes(hexToBytes(pubKeyHexForFp))).slice(0, 32)}`;
-    if (keyId !== expectedFp) {
-      throw new PramptaSignatureError(
-        `operator_key_id does not match public key: expected ${expectedFp}, got ${keyId}`
-      );
-    }
+    // Resolve the verifying key from the pinned trust anchor (or /keys),
+    // then check the signature was made by exactly that key.
+    const pubKeyHex = await this.resolveOperatorKey(keyId);
 
     // Rebuild canonical body excluding signature field
     const bodyForSigning = { ...raw };
@@ -489,8 +537,6 @@ export class Prampta {
     const canonical = canonicalJson(bodyForSigning);
     const messageBytes = new TextEncoder().encode(canonical);
 
-    // Get operator public key
-    const pubKeyHex = await this.getOperatorPublicKey();
     const pubKeyBytes = hexToBytes(pubKeyHex);
     const sigBytes = hexToBytes(sig);
 
@@ -683,7 +729,10 @@ export class Prampta {
 
   async assertAllowed(subjectId: string, options: Omit<VerifyRequest, "subjectId"> = {}): Promise<SignedDecision> {
     const decision = await this.verifyGeneration({ subjectId, ...options });
-    if (!decision.allowed) throw new PramptaRefusalError(decision);
+    if (!decision.allowed) {
+      if (this.enforce) throw new PramptaRefusalError(decision);
+      console.warn(`PRAMPTA monitor mode: would REFUSE (${decision.reason}) but enforce=false — proceeding.`);
+    }
     return decision;
   }
 
