@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [SDK]
+    branches: [SDK, PRE-GEN-pilot-testing]
   pull_request:
 
 jobs:
@@ -15,7 +15,7 @@ jobs:
           python-version: "3.11"
       - name: Install SDK + test deps
         run: |
-          pip install -e ./python
+          pip install -e "./python[async]"
           pip install pytest pytest-asyncio
       - name: Tests (incl. spec vectors)
         run: pytest -q python/tests
