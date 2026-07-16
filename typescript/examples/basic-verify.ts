@@ -23,6 +23,9 @@ const pg = new Prampta({
 });
 
 const result = await pg.verify("leonardo-da-vinci", {
+  // The raw prompt is REQUIRED (or pass promptHash). It is hashed locally
+  // and never sent to PRAMPTA — the decision is bound to the hash.
+  prompt: "Leonardo da Vinci endorsing our product in a renaissance workshop",
   modality: "image",
   categories: ["endorsement"],
   productName: "ad-campaign-2026",

@@ -68,12 +68,12 @@ if (result.allowed) {
 ## Error Handling
 
 ```typescript
-import { Prampta, PramptaDeniedError, PramptaSignatureError } from "prampta";
+import { Prampta, PramptaRefusalError, PramptaSignatureError } from "prampta";
 
 try {
   await pg.assertAllowed("subject-id", { prompt: "...", modality: "image" });
 } catch (e) {
-  if (e instanceof PramptaDeniedError) {
+  if (e instanceof PramptaRefusalError) {
     // License denial — e.reason has the code (PG_NO_LICENSE, PG_SCOPE_VIOLATION, etc.)
     console.log(e.reason);
   } else if (e instanceof PramptaSignatureError) {
@@ -105,7 +105,7 @@ Creates a client instance.
 
 ### `pg.verify(subjectId, options)`
 
-Returns `Promise<VerifyResult>`:
+Returns `Promise<SignedDecision>`:
 - `allowed` — generation authorized
 - `reason` — refusal code (`PG_NO_LICENSE`, `PG_SCOPE_VIOLATION`, `PG_SUBJECT_OPTED_OUT`)
 - `licenseId` — the authorizing license
@@ -115,7 +115,7 @@ Returns `Promise<VerifyResult>`:
 
 ### `pg.assertAllowed(subjectId, options)`
 
-Same as `verify()` but throws `PramptaDeniedError` if not allowed.
+Same as `verify()` but throws `PramptaRefusalError` if not allowed.
 
 ### `pg.health()` / `pg.version()`
 

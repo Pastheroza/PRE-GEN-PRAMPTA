@@ -13,8 +13,17 @@ import pytest
 
 from prampta.client import _canonical_json, _verify_ed25519
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-VECTORS = json.loads((REPO_ROOT / "spec" / "test-vectors" / "vectors.json").read_text(encoding="utf-8"))
+def _find_vectors() -> Path:
+    """Walk upward until spec/test-vectors is found — works both in the
+    monorepo (sdk/python/tests) and the public SDK repo (python/tests)."""
+    for parent in Path(__file__).resolve().parents:
+        candidate = parent / "spec" / "test-vectors" / "vectors.json"
+        if candidate.exists():
+            return candidate
+    raise FileNotFoundError("spec/test-vectors/vectors.json not found in any parent directory")
+
+
+VECTORS = json.loads(_find_vectors().read_text(encoding="utf-8"))
 
 
 @pytest.mark.parametrize("case", VECTORS["canonical_json"], ids=lambda c: c["name"])

@@ -25,5 +25,5 @@ dependencies = [
 async = ["httpx>=0.25"]
 
 [project.urls]
-Homepage = "https://github.com/Pastheroza/PPlicence"
-Documentation = "https://github.com/Pastheroza/PPlicence/tree/main/sdk/python"
+Homepage = "https://github.com/Pastheroza/PRE-GEN-PRAMPTA"
+Documentation = "https://github.com/Pastheroza/PRE-GEN-PRAMPTA/tree/SDK/python"

@@ -1,7 +1,7 @@
 {
   "name": "prampta",
   "version": "0.1.0",
-  "description": "PRAMPTA SDK — authorization before generation",
+  "description": "PRAMPTA SDK \u2014 authorization before generation",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -18,7 +18,8 @@
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts --clean",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "typecheck:examples": "tsc -p tsconfig.examples.json"
   },
   "keywords": [
     "prampta",

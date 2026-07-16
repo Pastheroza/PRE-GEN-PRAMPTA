@@ -84,6 +84,15 @@ export interface VerifyRequest {
   };
 }
 
+/** Options for the flat `pg.verify(subjectId, options)` convenience call. */
+export interface VerifyOptions extends Omit<VerifyRequest, "subjectId"> {
+  categories?: string[];
+  channel?: string;
+  productName?: string;
+  projectName?: string;
+  territory?: string;
+}
+
 export interface SignedDecision {
   schemaVersion: string;
   decisionId: string;
@@ -236,6 +245,12 @@ export const SOFT_REFUSAL_CODES = new Set([
 function envVar(key: string): string {
   if (typeof process !== "undefined" && process.env) return process.env[key] ?? "";
   return "";
+}
+
+/** SHA-256 of a prompt — what a decision gets bound to. Standalone twin of
+ * `Prampta.hashPrompt` so it can be imported directly. */
+export async function hashPrompt(prompt: string): Promise<string> {
+  return sha256(prompt);
 }
 
 async function sha256(input: string): Promise<string> {
@@ -645,6 +660,25 @@ export class Prampta {
       }
       throw e;
     }
+  }
+
+  /** Flat convenience API mirroring the Python SDK: intended-use fields
+   * (categories, channel, productName, …) are accepted at the top level.
+   * Either `prompt` or `promptHash` is REQUIRED — decisions are bound to
+   * the prompt hash and the SDK refuses to request unbound ones. */
+  async verify(subjectId: string, options: VerifyOptions = {}): Promise<SignedDecision> {
+    const { categories, channel, productName, projectName, territory, intendedUse, ...rest } = options;
+    const iu = intendedUse ?? {
+      ...(channel ? { channel } : {}),
+      ...(productName ? { productName } : {}),
+      ...(projectName ? { projectName } : {}),
+      ...(categories ? { categories } : {}),
+      ...(territory ? { territory } : {}),
+    };
+    return this.verifyGeneration({
+      subjectId, ...rest,
+      ...(Object.keys(iu).length ? { intendedUse: iu } : {}),
+    });
   }
 
   async assertAllowed(subjectId: string, options: Omit<VerifyRequest, "subjectId"> = {}): Promise<SignedDecision> {

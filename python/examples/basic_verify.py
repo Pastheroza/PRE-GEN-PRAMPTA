@@ -21,6 +21,9 @@ pg = Prampta(
 # Check if generation is authorized
 result = pg.verify(
     "leonardo-da-vinci",
+    # The raw prompt is REQUIRED (or pass prompt_hash=...). It is hashed
+    # locally and never sent to PRAMPTA — the decision is bound to the hash.
+    prompt="Leonardo da Vinci endorsing our product in a renaissance workshop",
     modality="image",
     categories=["endorsement"],
     product_name="ad-campaign-2026",

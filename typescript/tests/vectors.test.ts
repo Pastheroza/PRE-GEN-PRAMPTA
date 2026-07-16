@@ -7,14 +7,26 @@
  */
 import { describe, it, expect } from "vitest";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as ed from "@noble/ed25519";
 
 import { canonicalJson } from "../src/index";
 
+// Walk upward until spec/test-vectors is found — works both in the monorepo
+// (sdk/typescript/tests) and the public SDK repo (typescript/tests).
+function findVectors(): string {
+  let dir = __dirname;
+  for (let i = 0; i < 8; i++) {
+    const candidate = join(dir, "spec", "test-vectors", "vectors.json");
+    if (existsSync(candidate)) return candidate;
+    dir = join(dir, "..");
+  }
+  throw new Error("spec/test-vectors/vectors.json not found in any parent directory");
+}
+
 const vectors = JSON.parse(
-  readFileSync(join(__dirname, "../../../spec/test-vectors/vectors.json"), "utf-8"),
+  readFileSync(findVectors(), "utf-8"),
 );
 
 function sha256Hex(s: string): string {

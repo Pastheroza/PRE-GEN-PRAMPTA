@@ -203,6 +203,8 @@ class AsyncPrampta:
                 issued_at=data.get("issued_at", 0),
                 expires_at=data.get("expires_at", 0),
                 prompt_hash=data.get("prompt_hash", ""),
+                model=data.get("model", ""),
+                subject_authority=data.get("subject_authority", ""),
             )
 
             # Verify operator signature, TTL, and payload binding

@@ -23,10 +23,10 @@ const pg = new Prampta({
  * Example: verifying multiple subjects in parallel
  * (e.g., a scene with multiple people)
  */
-async function generateScene(subjects: string[]) {
+async function generateScene(subjects: string[], prompt: string) {
   const results = await Promise.allSettled(
     subjects.map((s) =>
-      pg.verify(s, { modality: "image", categories: ["likeness"] }),
+      pg.verify(s, { prompt, modality: "image", categories: ["likeness"] }),
     ),
   );
 
@@ -55,8 +55,7 @@ async function generateScene(subjects: string[]) {
 }
 
 // Demo
-await generateScene([
-  "leonardo-da-vinci",
-  "unknown-person",
-  "opted-out-subject",
-]);
+await generateScene(
+  ["leonardo-da-vinci", "unknown-person", "opted-out-subject"],
+  "Renaissance figures discussing a new invention in a workshop",
+);

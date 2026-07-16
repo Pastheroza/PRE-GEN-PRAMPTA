@@ -22,6 +22,7 @@ async def generate_image(prompt: str, subject_id: str):
         # Verify BEFORE generation — this is the core principle
         result = await pg.verify(
             subject_id,
+            prompt=prompt,  # hashed locally, never sent — binds the decision
             modality="image",
             categories=["likeness", "endorsement"],
         )

@@ -89,6 +89,8 @@ class VerifyResult:
     issued_at: int = 0
     expires_at: int = 0
     prompt_hash: str = ""
+    #: The AI model this decision is bound to (echoed by the server).
+    model: str = ""
     #: Strongest authority backing the subject: self | agency_asserted |
     #: consented | verified. "self" means only the registrant's own claim —
     #: consumers may want to require a higher tier for commercial use.
@@ -420,6 +422,7 @@ class Prampta:
                 issued_at=data.get("issued_at", 0),
                 expires_at=data.get("expires_at", 0),
                 prompt_hash=data.get("prompt_hash", ""),
+                model=data.get("model", ""),
                 subject_authority=data.get("subject_authority", ""),
             )
 
