@@ -110,6 +110,7 @@ def test_async_binding_call_signature_matches_sync():
     """Guard against the regression returning: the async client must pass the
     full intended_use into _verify_context_binding (7 positional args)."""
     import inspect
+    pytest.importorskip("httpx")
     from prampta import async_client
     src = inspect.getsource(async_client)
     # The call site must forward intended_use (the 7th argument).
