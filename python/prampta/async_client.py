@@ -52,7 +52,7 @@ class AsyncPrampta:
         verify_signatures: bool = True,
         operator_public_key_hex: str | None = None,
         fail_closed: bool = True,
-        enforce: bool = True,
+        enforce: bool = False,  # PILOT branch default: monitor only, never block
         max_retries: int = 2,
         retry_backoff: float = 0.2,
     ):

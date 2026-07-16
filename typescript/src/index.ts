@@ -422,7 +422,7 @@ export class Prampta {
     this.retryBackoffMs = config.retryBackoffMs ?? 200;
     this.failClosed = config.failClosed ?? true;
     this.verifySignature = config.verifyDecisionSignature ?? true;
-    this.enforce = config.enforce ?? true;
+    this.enforce = config.enforce ?? false; // PILOT branch default: monitor only
     this.pinnedKeys = parsePins(config.operatorPublicKeyHex || envVar("PRAMPTA_OPERATOR_PUBLIC_KEY") || "");
 
     if (!this.baseUrl) throw new PramptaError("baseUrl is required (or set PRAMPTA_BASE_URL)");

@@ -1,3 +1,5 @@
+> ⚠️ **Pilot Testing branch — monitor only.** This SDK does NOT block generation: it verifies and records signed decisions but lets every generation through. See [PILOT.md](PILOT.md). For enforcement use the [SDK](https://github.com/Pastheroza/PRE-GEN-PRAMPTA/tree/SDK) branch.
+
 # PRE-GEN — PRAMPTA SDK
 
 **Authorization before generation.** PRE-GEN is the protocol behind [PRAMPTA](https://prampta.com) — a rights registry that answers one question for AI providers: *"am I allowed to generate this subject in this context?"* — and returns a **cryptographically signed allow-or-deny decision** you can store as proof of compliance.
