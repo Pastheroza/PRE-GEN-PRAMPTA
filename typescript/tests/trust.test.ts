@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import * as ed from "@noble/ed25519";
-import { sha512 } from "@noble/hashes/sha2";
 import { createHash } from "node:crypto";
-import { Prampta, PramptaSignatureError, canonicalJson } from "../src/index";
+import { Prampta, canonicalJson } from "../src/index";
 
-// Enable synchronous ed25519 signing for the test.
-(ed.hashes as { sha512?: unknown }).sha512 = sha512;
+// Enable synchronous ed25519 signing for the test (sha512 via node:crypto,
+// no extra dependency).
+(ed.hashes as { sha512?: (m: Uint8Array) => Uint8Array }).sha512 =
+  (m: Uint8Array) => new Uint8Array(createHash("sha512").update(m).digest());
 
 function toHex(b: Uint8Array): string {
   return Buffer.from(b).toString("hex");
