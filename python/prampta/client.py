@@ -113,6 +113,7 @@ class IntendedUse:
     categories: list[str] = field(default_factory=list)
     modality: str = ""
     territory: str = ""
+    campaign_id: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -122,6 +123,7 @@ class IntendedUse:
             "categories": self.categories,
             "modality": self.modality,
             "territory": self.territory,
+            "campaign_id": self.campaign_id,
         }
 
 
@@ -365,6 +367,7 @@ class Prampta:
                 ("project_name", intended_use.project_name),
                 ("channel", intended_use.channel),
                 ("territory", intended_use.territory),
+                ("campaign_id", intended_use.campaign_id),
             ):
                 got = got_iu.get(field_name, "")
                 if got and sent and got != sent:
@@ -389,6 +392,7 @@ class Prampta:
         categories: list[str] | None = None,
         channel: str = "",
         product_name: str = "",
+        campaign_id: str = "",
         intended_use: IntendedUse | None = None,
     ) -> VerifyResult:
         """Check if generation is authorized for a subject.
@@ -429,6 +433,7 @@ class Prampta:
                 product_name=product_name,
                 categories=categories or [],
                 modality=modality,
+                campaign_id=campaign_id,
             )
 
         payload = {

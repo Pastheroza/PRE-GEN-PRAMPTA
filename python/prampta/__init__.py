@@ -10,7 +10,11 @@ Usage:
         token="pair-token-here",
     )
 
-    result = pp.verify("leonardo-da-vinci", modality="image")
+    result = pp.verify(
+        "leonardo-da-vinci",
+        prompt="Da Vinci in a documentary",
+        modality="image",
+    )
     if result.allowed:
         generate(...)  # proceed
     else:
@@ -20,6 +24,7 @@ Usage:
 from prampta.client import (
     Prampta, VerifyResult, IntendedUse,
     PramptaError, PramptaSignatureError, PramptaSchemaError, PramptaRefused,
+    hash_prompt,
 )
 from prampta.matcher import match_subjects, normalize_for_match, SubjectIndexCache
 
@@ -27,5 +32,6 @@ __version__ = "0.4.0"
 __all__ = [
     "Prampta", "VerifyResult", "IntendedUse",
     "PramptaError", "PramptaSignatureError", "PramptaSchemaError", "PramptaRefused",
+    "hash_prompt",
     "match_subjects", "normalize_for_match", "SubjectIndexCache",
 ]

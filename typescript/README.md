@@ -87,7 +87,7 @@ const pg = new Prampta({
 | `operatorPublicKeyHex` | `PRAMPTA_OPERATOR_PUBLIC_KEY` | No | Pinned operator key (recommended for production) |
 | `timeoutMs` | — | No | Default `3000`. Request timeout in ms. |
 | `failClosed` | — | No | Default `true`. Deny on any verification error. |
-| `verifySignatures` | — | No | Default `true`. Set `false` only for local dev. |
+| `verifyDecisionSignature` | — | No | Default `true`. Set `false` only for local dev. |
 
 ## Error Handling
 

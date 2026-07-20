@@ -174,6 +174,7 @@ class AsyncPrampta:
         categories: list[str] | None = None,
         channel: str = "",
         product_name: str = "",
+        campaign_id: str = "",
         intended_use: IntendedUse | None = None,
     ) -> VerifyResult:
         """Check if generation is authorized for a subject (async).
@@ -193,6 +194,7 @@ class AsyncPrampta:
                 channel=channel,
                 product_name=product_name,
                 categories=categories or [],
+                campaign_id=campaign_id,
                 modality=modality,
             )
 

@@ -6870,6 +6870,231 @@
                 }
             }
         },
+        "/v1/billing/templates": {
+            "get": {
+                "tags": [
+                    "billing"
+                ],
+                "summary": "Billing Templates",
+                "description": "Preset billing terms for the UI \u2014 templates, not mandated prices.",
+                "operationId": "billing_templates_v1_billing_templates_get",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/billing/balance/credit": {
+            "post": {
+                "tags": [
+                    "billing"
+                ],
+                "summary": "Credit Balance",
+                "description": "Record a prepayment against a license (operator only).\n\nPRAMPTA does not move money: this REFLECTS an out-of-band payment (invoice,\nescrow funding). The balance gates new authorizations on prepayment_required\nlicenses and is debited as receipts close reservations.",
+                "operationId": "credit_balance_v1_billing_balance_credit_post",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/BalanceCreditRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "OAuth2PasswordBearer": []
+                    }
+                ]
+            }
+        },
+        "/v1/billing/statement": {
+            "get": {
+                "tags": [
+                    "billing"
+                ],
+                "summary": "Statement",
+                "description": "Reconciliation statement for a period.\n\nScope by license_id (one statement) or subject_id (all its licenses).\nVisible to the subject's controller, the licensee side, or an operator \u2014\nboth parties receive the identical document.",
+                "operationId": "statement_v1_billing_statement_get",
+                "security": [
+                    {
+                        "OAuth2PasswordBearer": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "period",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "description": "YYYY-MM",
+                            "title": "Period"
+                        },
+                        "description": "YYYY-MM"
+                    },
+                    {
+                        "name": "license_id",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "string"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "title": "License Id"
+                        }
+                    },
+                    {
+                        "name": "subject_id",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "string"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "title": "Subject Id"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/billing/statement.csv": {
+            "get": {
+                "tags": [
+                    "billing"
+                ],
+                "summary": "Statement Csv",
+                "description": "The statement as one CSV \u2014 the reconciliation document both sides\nattach to an invoice. Same authorization rules as /statement.",
+                "operationId": "statement_csv_v1_billing_statement_csv_get",
+                "security": [
+                    {
+                        "OAuth2PasswordBearer": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "period",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "description": "YYYY-MM",
+                            "title": "Period"
+                        },
+                        "description": "YYYY-MM"
+                    },
+                    {
+                        "name": "license_id",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "string"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "title": "License Id"
+                        }
+                    },
+                    {
+                        "name": "subject_id",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "string"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "title": "Subject Id"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/keys": {
             "get": {
                 "tags": [
@@ -6967,6 +7192,29 @@
                     "avatar_url"
                 ],
                 "title": "AvatarUpdateRequest"
+            },
+            "BalanceCreditRequest": {
+                "properties": {
+                    "license_id": {
+                        "type": "string",
+                        "title": "License Id"
+                    },
+                    "amount_cents": {
+                        "type": "integer",
+                        "title": "Amount Cents"
+                    },
+                    "note": {
+                        "type": "string",
+                        "title": "Note",
+                        "default": ""
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "license_id",
+                    "amount_cents"
+                ],
+                "title": "BalanceCreditRequest"
             },
             "BanRequest": {
                 "properties": {
@@ -7649,6 +7897,11 @@
                     "use_case": {
                         "type": "string",
                         "title": "Use Case",
+                        "default": ""
+                    },
+                    "campaign_id": {
+                        "type": "string",
+                        "title": "Campaign Id",
                         "default": ""
                     }
                 },
@@ -8506,6 +8759,17 @@
                         "type": "string",
                         "title": "Rules Text",
                         "default": ""
+                    },
+                    "billing_terms": {
+                        "anyOf": [
+                            {
+                                "type": "object"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Billing Terms"
                     }
                 },
                 "type": "object",
@@ -8605,6 +8869,11 @@
                     "prompt_hash": {
                         "type": "string",
                         "title": "Prompt Hash"
+                    },
+                    "event_type": {
+                        "type": "string",
+                        "title": "Event Type",
+                        "default": "output_accepted"
                     },
                     "output_hash": {
                         "type": "string",
@@ -10284,7 +10553,8 @@
                             "categories": [],
                             "modality": "",
                             "territory": "",
-                            "use_case": ""
+                            "use_case": "",
+                            "campaign_id": ""
                         }
                     },
                     "model": {
@@ -10610,6 +10880,17 @@
                         "type": "array",
                         "title": "Extensions",
                         "default": []
+                    },
+                    "billing_terms": {
+                        "anyOf": [
+                            {
+                                "type": "object"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Billing Terms"
                     }
                 },
                 "type": "object",

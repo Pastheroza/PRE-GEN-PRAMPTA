@@ -6,7 +6,7 @@
  *
  * @example Basic verification
  * ```ts
- * import { Prampta } from "prampta";
+ * import { Prampta } from "@prampta/sdk";
  *
  * const pg = new Prampta({
  *   baseUrl: "https://api2.prampta.com",
@@ -90,6 +90,8 @@ export interface VerifyRequest {
     projectName?: string;
     categories?: string[];
     territory?: string;
+    /** Commercial-model campaign binding — required by premium billing terms. */
+    campaignId?: string;
   };
 }
 
@@ -100,6 +102,7 @@ export interface VerifyOptions extends Omit<VerifyRequest, "subjectId"> {
   productName?: string;
   projectName?: string;
   territory?: string;
+  campaignId?: string;
 }
 
 export interface SignedDecision {
@@ -226,6 +229,9 @@ export class PramptaFailClosedError extends PramptaError {
 // ── Constants ──────────────────────────────────────────────────────────
 
 export const REFUSAL_DESCRIPTIONS: Record<string, string> = {
+  PG_CAMPAIGN_REQUIRED: "This license requires a campaign_id on every generation",
+  PG_BUDGET_EXHAUSTED: "The license's prepaid balance cannot cover this generation — top up the balance",
+  PG_RECEIPTS_OVERDUE: "Too many authorized generations without receipts — submit receipts to resume",
   PG_NO_SUBJECT: "Subject not found in registry",
   PG_SUBJECT_PENDING: "Subject registration is pending approval",
   PG_SUBJECT_DISPUTED: "Subject is under dispute — generation blocked",
@@ -583,6 +589,7 @@ export class Prampta {
         channel: string;
         territory: string;
         categories: string[];
+        campaignId: string;
       };
     },
   ): void {
@@ -625,6 +632,7 @@ export class Prampta {
         ["project_name", String(iu.project_name || ""), expected.intendedUse.projectName],
         ["channel", String(iu.channel || ""), expected.intendedUse.channel],
         ["territory", String(iu.territory || ""), expected.intendedUse.territory],
+        ["campaign_id", String(iu.campaign_id || ""), expected.intendedUse.campaignId],
       ];
       for (const [name, got, sent] of pairs) {
         if (got && sent && got !== sent) {
@@ -669,6 +677,7 @@ export class Prampta {
         categories: request.intendedUse?.categories || [],
         modality: request.modality || "",
         territory: request.intendedUse?.territory || "",
+        campaign_id: request.intendedUse?.campaignId || "",
       },
     };
 
@@ -693,6 +702,7 @@ export class Prampta {
           channel: request.intendedUse?.channel || "",
           territory: request.intendedUse?.territory || "",
           categories: request.intendedUse?.categories || [],
+          campaignId: request.intendedUse?.campaignId || "",
         },
       });
 
@@ -713,13 +723,14 @@ export class Prampta {
    * Either `prompt` or `promptHash` is REQUIRED — decisions are bound to
    * the prompt hash and the SDK refuses to request unbound ones. */
   async verify(subjectId: string, options: VerifyOptions = {}): Promise<SignedDecision> {
-    const { categories, channel, productName, projectName, territory, intendedUse, ...rest } = options;
+    const { categories, channel, productName, projectName, territory, campaignId, intendedUse, ...rest } = options;
     const iu = intendedUse ?? {
       ...(channel ? { channel } : {}),
       ...(productName ? { productName } : {}),
       ...(projectName ? { projectName } : {}),
       ...(categories ? { categories } : {}),
       ...(territory ? { territory } : {}),
+      ...(campaignId ? { campaignId } : {}),
     };
     return this.verifyGeneration({
       subjectId, ...rest,
